@@ -74,10 +74,20 @@ create policy app_state_insert on app_state for insert with check (true);
 drop policy if exists app_state_update on app_state;
 create policy app_state_update on app_state for update using (true) with check (true);
 
--- realtime: make sure these tables broadcast changes
-alter publication supabase_realtime add table albums;
-alter publication supabase_realtime add table votes;
-alter publication supabase_realtime add table app_state;
+-- realtime: make sure these tables broadcast changes (guarded so re-running
+-- this script never fails with "already member of publication")
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'albums') then
+    alter publication supabase_realtime add table albums;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'votes') then
+    alter publication supabase_realtime add table votes;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'app_state') then
+    alter publication supabase_realtime add table app_state;
+  end if;
+end $$;
 
 -- seed data (83 albums) -----------------------------------------------
 
