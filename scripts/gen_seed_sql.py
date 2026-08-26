@@ -74,6 +74,8 @@ create policy votes_delete on votes for delete using (true);
 
 drop policy if exists app_state_select on app_state;
 create policy app_state_select on app_state for select using (true);
+drop policy if exists app_state_insert on app_state;
+create policy app_state_insert on app_state for insert with check (true);
 drop policy if exists app_state_update on app_state;
 create policy app_state_update on app_state for update using (true) with check (true);
 
