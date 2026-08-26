@@ -1,0 +1,13 @@
+Read CLAUDE_CODE_HANDOFF.md in this directory before doing anything.
+
+Short version: we're porting an existing React app (haburah.jsx) into a real
+Vite site, backed by Supabase, deployed to GitHub Pages. It's a Hebrew RTL
+album-ranking site for six friends. The design in haburah.jsx is final —
+preserve it exactly; what changes is the storage layer and the hosting.
+
+I want minimum intervention from me. Please handle the development, the
+deployment wiring, and the QA yourself. Batch anything you need from me into
+as few requests as possible rather than asking one thing at a time.
+
+Confirm you've read the handoff, tell me your plan, and ask me for everything
+you need in one go.
