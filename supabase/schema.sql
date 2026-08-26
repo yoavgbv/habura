@@ -41,19 +41,31 @@ alter table app_state enable row level security;
 -- permissive for the anon key; RLS is enabled mainly to avoid the
 -- "no policies at all" default-deny trap and to keep intent explicit,
 -- not to provide real per-voter security. Fine for six trusted friends.
+-- albums/votes writes are additionally gated to the phase they belong to
+-- (nominate-only for albums, vote-only for ballots), enforced server-side
+-- so a direct REST call with the anon key can't bypass the phase the UI
+-- enforces only client-side.
 drop policy if exists albums_select on albums;
 create policy albums_select on albums for select using (true);
 drop policy if exists albums_insert on albums;
-create policy albums_insert on albums for insert with check (source = 'added');
+create policy albums_insert on albums for insert with check (
+  source = 'added' and (select phase from app_state where id = 1) = 'nominate'
+);
 drop policy if exists albums_delete on albums;
-create policy albums_delete on albums for delete using (source = 'added');
+create policy albums_delete on albums for delete using (
+  source = 'added' and (select phase from app_state where id = 1) = 'nominate'
+);
 
 drop policy if exists votes_select on votes;
 create policy votes_select on votes for select using (true);
 drop policy if exists votes_insert on votes;
-create policy votes_insert on votes for insert with check (true);
+create policy votes_insert on votes for insert with check (
+  (select phase from app_state where id = 1) = 'vote'
+);
 drop policy if exists votes_delete on votes;
-create policy votes_delete on votes for delete using (true);
+create policy votes_delete on votes for delete using (
+  (select phase from app_state where id = 1) = 'vote'
+);
 
 drop policy if exists app_state_select on app_state;
 create policy app_state_select on app_state for select using (true);

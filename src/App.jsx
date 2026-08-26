@@ -541,6 +541,7 @@ function Ballot({ me, albums, initial, saveVote }) {
   const [picks, setPicks] = useState(() => new Set(initial));
   const [q, setQ] = useState("");
   const [onlyPicked, setOnlyPicked] = useState(false);
+  const [saving, setSaving] = useState(false);
   const dirty = useMemo(() => {
     const a = [...picks].sort().join(",");
     const b = [...initial].sort().join(",");
@@ -561,7 +562,13 @@ function Ballot({ me, albums, initial, saveVote }) {
   };
 
   const count = picks.size;
-  const canSave = !locked && count === PICKS_REQUIRED && dirty;
+  const canSave = !locked && !saving && count === PICKS_REQUIRED && dirty;
+
+  const handleSave = async () => {
+    setSaving(true);
+    await saveVote([...picks]);
+    setSaving(false);
+  };
 
   const filtered = useMemo(() => {
     const t = norm(q);
@@ -590,8 +597,8 @@ function Ballot({ me, albums, initial, saveVote }) {
             {onlyPicked ? "כל האלבומים" : "רק שבחרתי"}
           </button>
           {!locked && (
-            <button className="btn btn-pink" disabled={!canSave} onClick={() => saveVote([...picks])}>
-              {dirty ? "שמור הצבעה" : "נשמר"}
+            <button className="btn btn-pink" disabled={!canSave} onClick={handleSave}>
+              {saving ? "שומר…" : dirty ? "שמור הצבעה" : "נשמר"}
             </button>
           )}
         </div>
