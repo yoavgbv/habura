@@ -8,6 +8,7 @@ import {
   setPhase as dbSetPhase,
   resetAll as dbResetAll,
 } from "./lib/store";
+import { searchAlbums, coverArtUrl } from "./lib/musicbrainz";
 
 /* ============================================================
    החבורה — דירוג האלבומים החשובים בתולדות החבורה
@@ -195,7 +196,7 @@ export default function App() {
 
   /* ---------- add album ---------- */
   const addAlbum = useCallback(
-    async (artist, album, year) => {
+    async (artist, album, year, coverUrl) => {
       artist = (artist || "").trim();
       album = (album || "").trim();
       if (!artist || !album) { flash("צריך גם אמן וגם שם אלבום"); return false; }
@@ -205,7 +206,7 @@ export default function App() {
         artist, album,
         year: year ? Number(year) : null,
         addedBy: me,
-        coverUrl: bingCoverUrl(artist, album),
+        coverUrl: coverUrl || bingCoverUrl(artist, album),
       };
       const ok = await insertAlbum(entry);
       if (ok) { await refresh(); flash("נוסף: " + artist + " – " + album); return true; }
@@ -458,21 +459,111 @@ function EmptyPrompt({ setView }) {
   );
 }
 
-/* ============================================================ NOMINATE */
-function Nominate({ me, albums, addAlbum, deleteAlbum, existingKeys }) {
+/* ============================================================ ADD ALBUM (search-first, manual fallback) */
+function AddAlbumPanel({ addAlbum, existingKeys }) {
+  const [mode, setMode] = useState("search"); // search | manual
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const reqId = useRef(0);
+
   const [artist, setArtist] = useState("");
   const [album, setAlbum] = useState("");
   const [year, setYear] = useState("");
-  const [q, setQ] = useState("");
-  const [confirmId, setConfirmId] = useState(null); // album pending delete-confirm
+
+  useEffect(() => {
+    if (mode !== "search") return;
+    const term = q.trim();
+    // dropdown only renders when term.length >= 2, so stale state below is harmless
+    if (term.length < 2) return;
+    setLoading(true);
+    setSearchError(false);
+    const id = ++reqId.current;
+    const t = setTimeout(async () => {
+      try {
+        const r = await searchAlbums(term);
+        if (reqId.current === id) { setResults(r); setLoading(false); }
+      } catch (e) {
+        if (reqId.current === id) { setSearchError(true); setLoading(false); }
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [q, mode]);
+
+  const pick = async (r) => {
+    const ok = await addAlbum(r.artist, r.album, r.year, coverArtUrl(r.id));
+    if (ok) { setQ(""); setResults([]); }
+  };
 
   const dup = artist.trim() && album.trim() &&
     existingKeys.has(norm(artist) + " :: " + norm(album));
-
-  const submit = async () => {
+  const submitManual = async () => {
     const ok = await addAlbum(artist, album, year);
     if (ok) { setArtist(""); setAlbum(""); setYear(""); }
   };
+
+  if (mode === "manual") {
+    return (
+      <div className="add-panel">
+        <div className="panel-title">הוספת אלבום ידנית</div>
+        <div className="add-grid">
+          <input className="inp" placeholder="אמן / להקה" value={artist} dir="auto"
+            onChange={(e) => setArtist(e.target.value)} />
+          <input className="inp" placeholder="שם האלבום" value={album} dir="auto"
+            onChange={(e) => setAlbum(e.target.value)} />
+          <input className="inp inp-year" placeholder="שנה" value={year} inputMode="numeric"
+            onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} />
+          <button className="btn btn-pink" disabled={!artist.trim() || !album.trim() || dup} onClick={submitManual}>
+            הוסף
+          </button>
+        </div>
+        {dup && <div className="warn">האלבום הזה כבר ברשימה.</div>}
+        <div className="add-note">העטיפה תיטען אוטומטית לפי האמן והאלבום.</div>
+        <button className="mb-switch" onClick={() => setMode("search")}>← חזרה לחיפוש</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="add-panel">
+      <div className="panel-title">הוספת אלבום לרשימה</div>
+      <div className="mb-search-wrap">
+        <input className="inp" placeholder="חפש לפי אמן ואלבום… (למשל: Pixies Doolittle)" value={q} dir="auto"
+          onChange={(e) => setQ(e.target.value)} />
+        {q.trim().length >= 2 && (
+          <div className="mb-results">
+            {loading && <div className="mb-hint">מחפש…</div>}
+            {!loading && searchError && <div className="mb-hint">החיפוש נכשל. נסה שוב או הוסף ידנית.</div>}
+            {!loading && !searchError && results.length === 0 && (
+              <div className="mb-hint">לא נמצא. נסו ניסוח אחר או הוספה ידנית.</div>
+            )}
+            {!loading && results.map((r) => {
+              const already = existingKeys.has(albumKey(r.artist, r.album));
+              return (
+                <button key={r.id} className="mb-result" disabled={already} onClick={() => pick(r)}>
+                  <Cover artist={r.artist} album={r.album} coverUrl={coverArtUrl(r.id)} size="mini" />
+                  <div className="mb-result-meta">
+                    <span className="mb-result-artist" dir="auto">{r.artist}</span>
+                    <span className="mb-result-album" dir="auto">{r.album}{r.year ? " · " + r.year : ""}</span>
+                    {already && <span className="mb-result-dup">כבר ברשימה</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="add-note">חיפוש מול מאגר MusicBrainz. אלבומים מהרשימה המקורית קבועים; אלבומים שנוספו אפשר למחוק, כל עוד ההצבעה לא נפתחה.</div>
+      <button className="mb-switch" onClick={() => setMode("manual")}>לא מוצאים? הוספה ידנית →</button>
+    </div>
+  );
+}
+
+/* ============================================================ NOMINATE */
+function Nominate({ me, albums, addAlbum, deleteAlbum, existingKeys }) {
+  const [q, setQ] = useState("");
+  const [confirmId, setConfirmId] = useState(null); // album pending delete-confirm
 
   const filtered = useMemo(() => {
     const t = norm(q);
@@ -482,22 +573,7 @@ function Nominate({ me, albums, addAlbum, deleteAlbum, existingKeys }) {
 
   return (
     <section className="nominate">
-      <div className="add-panel">
-        <div className="panel-title">הוספת אלבום לרשימה</div>
-        <div className="add-grid">
-          <input className="inp" placeholder="אמן / להקה" value={artist} dir="auto"
-            onChange={(e) => setArtist(e.target.value)} />
-          <input className="inp" placeholder="שם האלבום" value={album} dir="auto"
-            onChange={(e) => setAlbum(e.target.value)} />
-          <input className="inp inp-year" placeholder="שנה" value={year} inputMode="numeric"
-            onChange={(e) => setYear(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))} />
-          <button className="btn btn-pink" disabled={!artist.trim() || !album.trim() || dup} onClick={submit}>
-            הוסף
-          </button>
-        </div>
-        {dup && <div className="warn">האלבום הזה כבר ברשימה.</div>}
-        <div className="add-note">העטיפה תיטען אוטומטית לפי האמן והאלבום. אלבומים מהרשימה המקורית קבועים; אלבומים שנוספו אפשר למחוק כאן, כל עוד ההצבעה לא נפתחה.</div>
-      </div>
+      <AddAlbumPanel addAlbum={addAlbum} existingKeys={existingKeys} />
 
       <div className="list-toolbar">
         <input className="inp search" placeholder="חיפוש ברשימה…" value={q} dir="auto"
@@ -873,6 +949,23 @@ const CSS = `
 .inp-year{text-align:center}
 .warn{margin-top:10px;color:var(--pink);font-weight:700;font-size:14px}
 .add-note{margin-top:10px;font-size:13px;color:var(--ink2)}
+.mb-search-wrap{position:relative}
+.mb-results{position:absolute;inset-inline:0;top:calc(100% - 2px);z-index:6;border:2px solid var(--ink);
+  border-top:none;border-radius:0 0 4px 4px;background:var(--paper2);max-height:340px;overflow-y:auto;
+  box-shadow:5px 5px 0 rgba(23,19,15,.1)}
+.mb-result{display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;
+  background:none;border:none;border-top:1px solid var(--line);width:100%;text-align:start;font-family:'Heebo'}
+.mb-result:hover:not(:disabled){background:#fff}
+.mb-result:disabled{opacity:.5;cursor:not-allowed}
+.mb-result .cover{width:40px;flex:none;border:1.5px solid var(--ink)}
+.mb-result-meta{display:flex;flex-direction:column;min-width:0}
+.mb-result-artist{font-size:12px;font-weight:700;color:var(--ink2)}
+.mb-result-album{font-family:'Suez One',serif;font-size:15px;line-height:1.1}
+.mb-result-dup{font-size:11px;color:var(--pink);font-weight:700}
+.mb-hint{padding:10px;font-size:13px;color:var(--ink2)}
+.mb-switch{background:none;border:none;cursor:pointer;color:var(--blue);font-weight:700;font-size:13px;
+  padding:0;margin-top:10px;display:block;font-family:'Heebo'}
+.mb-switch:hover{text-decoration:underline}
 
 /* album grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
