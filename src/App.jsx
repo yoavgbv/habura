@@ -427,7 +427,7 @@ function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
       <div className="home-stats">
         {phase === "vote" ? (
           <>
-            <Stat n={votedCount + "/6"} label="הצביעו" />
+            <Stat n={votedCount + "/" + MEMBERS.length} label="הצביעו" />
             <Stat n={total} label="אלבומים במרוץ" />
             <button className="btn btn-pink btn-lg" onClick={() => setView("results")}>לספירה הגדולה →</button>
           </>
@@ -727,12 +727,12 @@ function Results({ tally, phase, votedCount, votes }) {
       </section>
     );
   }
-  if (rows.length === 0) {
+  if (votedCount < MEMBERS.length) {
     return (
       <section className="results">
         <div className="res-locked">
-          <div className="rl-title">אין עדיין הצבעות</div>
-          <p>{votedCount}/6 הצביעו. ברגע שמישהו שומר עשירייה, הספירה מתחילה.</p>
+          <div className="rl-title">הספירה עדיין סגורה</div>
+          <p>{votedCount}/{MEMBERS.length} הצביעו. התוצאות ייחשפו כשכולם יצביעו.</p>
         </div>
       </section>
     );
@@ -744,8 +744,7 @@ function Results({ tally, phase, votedCount, votes }) {
       <div className="res-head">
         <div className="eyebrow">הספירה הגדולה</div>
         <h2 className="res-title">חמשת החשובים</h2>
-        <div className="res-progress">{votedCount}/6 מהחבורה הצביעו</div>
-        {votedCount < 6 && <div className="res-warn">הספירה חיה — עוד לא כולם הצביעו.</div>}
+        <div className="res-progress">כל החבורה הצביעה</div>
         {boundaryTie && <div className="res-warn">יש תיקו סביב מקום 5 — צריך שובר שוויון ידני.</div>}
       </div>
 
