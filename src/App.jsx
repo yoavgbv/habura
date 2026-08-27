@@ -29,7 +29,7 @@ const MEMBERS = [
 ];
 const memberName = (id) => (MEMBERS.find((m) => m.id === id) || {}).name || id;
 
-const PICKS_REQUIRED = 10;
+const PICKS_REQUIRED = 15;
 
 /* ---------- helpers ---------- */
 const norm = (s) =>
@@ -391,7 +391,7 @@ function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
         </h1>
         <p className="dek">
           {phase === "vote"
-            ? "הרשימה נעולה. כל אחד בוחר בדיוק עשרה. בסוף — הספירה הגדולה."
+            ? "הרשימה נעולה. כל אחד בוחר בדיוק חמישה עשר. בסוף — הספירה הגדולה."
             : "בונים את הרשימה יחד. כל אחד מוסיף אלבומים שחסרים, ואז המנהל פותח להצבעה."}
         </p>
       </div>
@@ -414,7 +414,7 @@ function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
                     ? done
                       ? "✓ הצביע"
                       : picks > 0
-                      ? picks + "/10 טיוטה"
+                      ? picks + "/" + PICKS_REQUIRED + " טיוטה"
                       : "טרם הצביע"
                     : "כניסה →"}
                 </span>
@@ -664,8 +664,8 @@ function Ballot({ me, albums, initial, saveVote }) {
             {locked
               ? "ההצבעה שלך ננעלה — לא ניתן לשנות"
               : count === PICKS_REQUIRED
-              ? "העשירייה שלך מוכנה"
-              : "בחר עשרה אלבומים"}
+              ? "הבחירה שלך מוכנה"
+              : "בחר חמישה עשר אלבומים"}
           </span>
         </div>
         <div className="bb-actions">
