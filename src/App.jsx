@@ -665,7 +665,9 @@ function Ballot({ me, albums, initial, saveVote }) {
               ? "ההצבעה שלך ננעלה — לא ניתן לשנות"
               : count === PICKS_REQUIRED
               ? "הבחירה שלך מוכנה"
-              : "בחר חמישה עשר אלבומים"}
+              : count === 0
+              ? "בחר חמישה עשר אלבומים"
+              : "עוד " + (PICKS_REQUIRED - count) + (PICKS_REQUIRED - count === 1 ? " אלבום" : " אלבומים")}
           </span>
         </div>
         <div className="bb-actions">
