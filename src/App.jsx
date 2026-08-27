@@ -865,7 +865,7 @@ const CSS = `
 *{box-sizing:border-box}
 .wrap{
   position:relative; min-height:100vh; background:var(--paper); color:var(--ink);
-  font-family:'Heebo',system-ui,Arial,sans-serif; overflow-x:hidden;
+  font-family:'Heebo',system-ui,Arial,sans-serif; overflow-x:clip;
   -webkit-font-smoothing:antialiased;
 }
 .wrap.center{display:flex;align-items:center;justify-content:center}
