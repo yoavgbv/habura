@@ -32,7 +32,7 @@ const memberName = (id) => (MEMBERS.find((m) => m.id === id) || {}).name || id;
 const POLLS = {
   main: {
     id: "main",
-    tabLabel: "החבורה",
+    tabLabel: "החשובים בתולדות החבורה",
     picksRequired: 15,
     picksWord: "חמישה עשר",
     resultsMode: "uniform",
