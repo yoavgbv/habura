@@ -178,15 +178,14 @@ export default function App() {
         if (ya !== yb) return ya - yb;
         return (a.album.artist || "").localeCompare(b.album.artist || "");
       });
-    // rank + boundary tie flag for top 5
+    // competition ranking (ties share a rank, next rank skips accordingly)
     let rank = 0, lastCount = null, shown = 0;
     rows.forEach((r) => {
       shown += 1;
       if (r.count !== lastCount) { rank = shown; lastCount = r.count; }
       r.rank = rank;
     });
-    const boundaryTie = rows.filter((r) => r.rank === (rows[4] ? rows[4].rank : -1)).length > 1 && rows.length > 5;
-    return { rows, boundaryTie };
+    return { rows };
   }, [votes, albumById]);
 
   const votedCount = useMemo(
@@ -716,7 +715,7 @@ function Ballot({ me, albums, initial, saveVote }) {
 
 /* ============================================================ RESULTS */
 function Results({ tally, phase, votedCount, votes }) {
-  const { rows, boundaryTie } = tally;
+  const { rows } = tally;
   if (phase !== "vote") {
     return (
       <section className="results">
@@ -737,19 +736,24 @@ function Results({ tally, phase, votedCount, votes }) {
       </section>
     );
   }
-  const top5 = rows.slice(0, 5);
-  const rest = rows.slice(5);
+  // everyone tied for a top-5 spot is shown, so the group can be 5, 6, 8...
+  // never a partial cut that shows some tied albums but not others
+  const top = rows.filter((r) => r.rank <= 5);
+  const rest = rows.filter((r) => r.rank > 5);
+  const title = top.length === 5 ? "חמשת החשובים" : "ה־" + top.length + " החשובים";
   return (
     <section className="results">
       <div className="res-head">
         <div className="eyebrow">הספירה הגדולה</div>
-        <h2 className="res-title">חמשת החשובים</h2>
+        <h2 className="res-title">{title}</h2>
         <div className="res-progress">כל החבורה הצביעה</div>
-        {boundaryTie && <div className="res-warn">יש תיקו סביב מקום 5 — צריך שובר שוויון ידני.</div>}
+        {top.length > 5 && (
+          <div className="res-warn">תיקו במקום החמישי — לכן מוצגים {top.length} אלבומים במקום 5.</div>
+        )}
       </div>
 
       <ol className="top5">
-        {top5.map((r) => (
+        {top.map((r) => (
           <li key={r.id} className="crown">
             <div className="rank">
               <span className="rank-ghost">{r.rank}</span>
