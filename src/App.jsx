@@ -29,7 +29,28 @@ const MEMBERS = [
 ];
 const memberName = (id) => (MEMBERS.find((m) => m.id === id) || {}).name || id;
 
-const PICKS_REQUIRED = 15;
+const POLLS = {
+  main: {
+    id: "main",
+    tabLabel: "החבורה",
+    picksRequired: 15,
+    picksWord: "חמישה עשר",
+    resultsMode: "uniform",
+    hero: { l1: "חמשת האלבומים", l2: "החשובים בתולדות", l3: "החבורה" },
+    dekVote: "הרשימה נעולה. כל אחד בוחר בדיוק חמישה עשר. בסוף — הספירה הגדולה.",
+    dekNominate: "בונים את הרשימה יחד. כל אחד מוסיף אלבומים שחסרים, ואז המנהל פותח להצבעה.",
+  },
+  best_ever: {
+    id: "best_ever",
+    tabLabel: "הכי טוב בהיסטוריה",
+    picksRequired: 5,
+    picksWord: "חמישה",
+    resultsMode: "podium",
+    hero: { l1: "האלבום", l2: "הכי טוב", l3: "בהיסטוריה" },
+    dekVote: "הרשימה נעולה. כל אחד בוחר בדיוק חמישה. בסוף — הכתרת המנצח.",
+    dekNominate: "אותה רשימה, שאלה אחרת: מה האלבום הכי טוב שיש? הוסיפו מה שחסר, ואז המנהל פותח להצבעה.",
+  },
+};
 
 /* ---------- helpers ---------- */
 const norm = (s) =>
@@ -87,12 +108,8 @@ function Cover({ artist, album, coverUrl, size }) {
 
 /* ============================================================ */
 export default function App() {
-  const [booted, setBooted] = useState(false);
-  const [phase, setPhase] = useState("nominate"); // nominate | vote
-  const [albums, setAlbums] = useState([]);
-  const [votes, setVotes] = useState({}); // { memberId: {picks:[], updatedAt} }
+  const [activePoll, setActivePoll] = useState("main");
   const [me, setMe] = useState(null);
-  const [view, setView] = useState("home"); // home | list | results
   const [admin, setAdmin] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
@@ -103,16 +120,63 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }, []);
 
+  return (
+    <div className="wrap" dir="rtl">
+      <Style />
+      <div className="grain" aria-hidden="true" />
+
+      <PollTabs activePoll={activePoll} setActivePoll={setActivePoll} />
+
+      <PollApp
+        key={activePoll}
+        poll={POLLS[activePoll]}
+        me={me}
+        setMe={setMe}
+        admin={admin}
+        setAdmin={setAdmin}
+        flash={flash}
+      />
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ============================================================ POLL TABS */
+function PollTabs({ activePoll, setActivePoll }) {
+  return (
+    <div className="poll-tabs">
+      {Object.values(POLLS).map((p) => (
+        <button
+          key={p.id}
+          className={"poll-tab " + (activePoll === p.id ? "on" : "")}
+          onClick={() => setActivePoll(p.id)}
+        >
+          {p.tabLabel}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================ ONE POLL'S APP */
+function PollApp({ poll, me, setMe, admin, setAdmin, flash }) {
+  const [booted, setBooted] = useState(false);
+  const [phase, setPhase] = useState("nominate"); // nominate | vote
+  const [albums, setAlbums] = useState([]);
+  const [votes, setVotes] = useState({}); // { memberId: {picks:[], updatedAt} }
+  const [view, setView] = useState("home"); // home | list | results
+
   const refresh = useCallback(async () => {
     try {
-      const { albums: a, votes: v, phase: p } = await fetchAll();
+      const { albums: a, votes: v, phase: p } = await fetchAll(poll.id);
       setAlbums(a);
       setVotes(v);
       setPhase(p);
     } catch (e) {
       flash("שגיאת חיבור לשרת");
     }
-  }, [flash]);
+  }, [poll.id, flash]);
 
   useEffect(() => {
     (async () => {
@@ -124,7 +188,7 @@ export default function App() {
   // realtime sync across browsers, with a slow fallback poll in case the
   // websocket drops (common on mobile networks)
   useEffect(() => {
-    const unsubscribe = subscribeChanges(refresh);
+    const unsubscribe = subscribeChanges(poll.id, refresh);
     const t = setInterval(() => {
       if (document.visibilityState === "visible") refresh();
     }, 30000);
@@ -132,7 +196,7 @@ export default function App() {
       unsubscribe();
       clearInterval(t);
     };
-  }, [refresh]);
+  }, [poll.id, refresh]);
 
   const allAlbums = useMemo(() => {
     const added = albums
@@ -189,8 +253,8 @@ export default function App() {
   }, [votes, albumById]);
 
   const votedCount = useMemo(
-    () => MEMBERS.filter((m) => (votes[m.id]?.picks?.length || 0) === PICKS_REQUIRED).length,
-    [votes]
+    () => MEMBERS.filter((m) => (votes[m.id]?.picks?.length || 0) === poll.picksRequired).length,
+    [votes, poll.picksRequired]
   );
 
   /* ---------- add album ---------- */
@@ -207,33 +271,33 @@ export default function App() {
         addedBy: me,
         coverUrl: coverUrl || bingCoverUrl(artist, album),
       };
-      const ok = await insertAlbum(entry);
+      const ok = await insertAlbum(poll.id, entry);
       if (ok) { await refresh(); flash("נוסף: " + artist + " – " + album); return true; }
       flash("שמירה נכשלה, נסה שוב");
       return false;
     },
-    [me, flash, existingKeys, refresh]
+    [poll.id, me, flash, existingKeys, refresh]
   );
 
   /* ---------- delete a user-added album (nominate phase only) ---------- */
   const deleteAlbum = useCallback(
     async (id) => {
       const target = albums.find((a) => a.id === id);
-      const ok = await removeAlbum(id);
+      const ok = await removeAlbum(poll.id, id);
       if (ok) { await refresh(); flash(target ? "נמחק: " + target.artist + " – " + target.album : "נמחק"); }
       else flash("מחיקה נכשלה, נסה שוב");
     },
-    [albums, refresh, flash]
+    [poll.id, albums, refresh, flash]
   );
 
   /* ---------- save ballot (locked once submitted — see Ballot component) ---------- */
   const saveVote = useCallback(
     async (picks) => {
-      if ((votes[me]?.picks?.length || 0) === PICKS_REQUIRED) {
+      if ((votes[me]?.picks?.length || 0) === poll.picksRequired) {
         flash("ההצבעה שלך כבר ננעלה");
         return false;
       }
-      const ok = await saveBallot(me, picks);
+      const ok = await saveBallot(poll.id, me, picks);
       if (ok) {
         await refresh();
         flash("ההצבעה נשמרה ונעולה");
@@ -242,40 +306,32 @@ export default function App() {
       flash("שמירה נכשלה, נסה שוב");
       return false;
     },
-    [me, votes, flash, refresh]
+    [poll.id, poll.picksRequired, me, votes, flash, refresh]
   );
 
   /* ---------- admin actions (confirmation handled inline in AdminBar) ---------- */
   const openVoting = useCallback(async () => {
-    const ok = await dbSetPhase("vote");
+    const ok = await dbSetPhase(poll.id, "vote");
     if (ok) { await refresh(); flash("ההצבעה נפתחה"); }
     else flash("הפעולה נכשלה");
-  }, [flash, refresh]);
+  }, [poll.id, flash, refresh]);
   const reopenNoms = useCallback(async () => {
-    const ok = await dbSetPhase("nominate");
+    const ok = await dbSetPhase(poll.id, "nominate");
     if (ok) { await refresh(); flash("חזרה לשלב הצעות"); }
     else flash("הפעולה נכשלה");
-  }, [flash, refresh]);
+  }, [poll.id, flash, refresh]);
   const resetAll = useCallback(async () => {
-    await dbResetAll();
+    await dbResetAll(poll.id);
     await refresh();
     flash("אופס הכל");
-  }, [refresh, flash]);
+  }, [poll.id, refresh, flash]);
 
   if (!booted) {
-    return (
-      <div className="wrap center">
-        <Style />
-        <div className="loading">טוען את הרשימה…</div>
-      </div>
-    );
+    return <div className="loading center-loading">טוען את הרשימה…</div>;
   }
 
   return (
-    <div className="wrap" dir="rtl">
-      <Style />
-      <div className="grain" aria-hidden="true" />
-
+    <>
       <Nav
         me={me}
         phase={phase}
@@ -288,6 +344,7 @@ export default function App() {
       <main className="main">
         {view === "home" && (
           <Home
+            poll={poll}
             me={me}
             setMe={setMe}
             setView={setView}
@@ -311,6 +368,7 @@ export default function App() {
 
         {view === "list" && me && phase === "vote" && (
           <Ballot
+            poll={poll}
             me={me}
             albums={allAlbums}
             initial={votes[me]?.picks || []}
@@ -323,7 +381,7 @@ export default function App() {
         )}
 
         {view === "results" && (
-          <Results tally={tally} phase={phase} votedCount={votedCount} votes={votes} />
+          <Results poll={poll} tally={tally} phase={phase} votedCount={votedCount} votes={votes} />
         )}
       </main>
 
@@ -336,9 +394,7 @@ export default function App() {
         resetAll={resetAll}
         flash={flash}
       />
-
-      {toast && <div className="toast">{toast}</div>}
-    </div>
+    </>
   );
 }
 
@@ -372,7 +428,7 @@ function Nav({ me, phase, view, setView, setMe, admin }) {
 }
 
 /* ============================================================ HOME */
-function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
+function Home({ poll, me, setMe, setView, phase, votes, added, total, votedCount }) {
   const enter = (id) => {
     setMe(id);
     setView("list");
@@ -384,14 +440,12 @@ function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
           {phase === "vote" ? "ההצבעה פתוחה" : "שלב ההצעות"} · {total} אלבומים
         </div>
         <h1 className="hero">
-          <span className="hero-l1">חמשת האלבומים</span>
-          <span className="hero-l2">החשובים בתולדות</span>
-          <span className="hero-l3">החבורה</span>
+          <span className="hero-l1">{poll.hero.l1}</span>
+          <span className="hero-l2">{poll.hero.l2}</span>
+          <span className="hero-l3">{poll.hero.l3}</span>
         </h1>
         <p className="dek">
-          {phase === "vote"
-            ? "הרשימה נעולה. כל אחד בוחר בדיוק חמישה עשר. בסוף — הספירה הגדולה."
-            : "בונים את הרשימה יחד. כל אחד מוסיף אלבומים שחסרים, ואז המנהל פותח להצבעה."}
+          {phase === "vote" ? poll.dekVote : poll.dekNominate}
         </p>
       </div>
 
@@ -400,7 +454,7 @@ function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
         <div className="members">
           {MEMBERS.map((m) => {
             const picks = votes[m.id]?.picks?.length || 0;
-            const done = picks === PICKS_REQUIRED;
+            const done = picks === poll.picksRequired;
             return (
               <button
                 key={m.id}
@@ -413,7 +467,7 @@ function Home({ me, setMe, setView, phase, votes, added, total, votedCount }) {
                     ? done
                       ? "✓ הצביע"
                       : picks > 0
-                      ? picks + "/" + PICKS_REQUIRED + " טיוטה"
+                      ? picks + "/" + poll.picksRequired + " טיוטה"
                       : "טרם הצביע"
                     : "כניסה →"}
                 </span>
@@ -611,8 +665,9 @@ function Nominate({ me, albums, addAlbum, deleteAlbum, existingKeys }) {
 }
 
 /* ============================================================ BALLOT */
-function Ballot({ me, albums, initial, saveVote }) {
-  const locked = initial.length === PICKS_REQUIRED;
+function Ballot({ poll, me, albums, initial, saveVote }) {
+  const picksRequired = poll.picksRequired;
+  const locked = initial.length === picksRequired;
   const [picks, setPicks] = useState(() => new Set(initial));
   const [q, setQ] = useState("");
   const [onlyPicked, setOnlyPicked] = useState(false);
@@ -629,7 +684,7 @@ function Ballot({ me, albums, initial, saveVote }) {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else {
-        if (next.size >= PICKS_REQUIRED) return prev;
+        if (next.size >= picksRequired) return prev;
         next.add(id);
       }
       return next;
@@ -637,7 +692,7 @@ function Ballot({ me, albums, initial, saveVote }) {
   };
 
   const count = picks.size;
-  const canSave = !locked && !saving && count === PICKS_REQUIRED && dirty;
+  const canSave = !locked && !saving && count === picksRequired && dirty;
 
   const handleSave = async () => {
     setSaving(true);
@@ -657,16 +712,16 @@ function Ballot({ me, albums, initial, saveVote }) {
     <section className="ballot">
       <div className="ballot-bar">
         <div className="bb-count">
-          <span className={"bb-num " + (count === PICKS_REQUIRED ? "full" : "")}>{count}</span>
-          <span className="bb-of">/ {PICKS_REQUIRED}</span>
+          <span className={"bb-num " + (count === picksRequired ? "full" : "")}>{count}</span>
+          <span className="bb-of">/ {picksRequired}</span>
           <span className="bb-label">
             {locked
               ? "ההצבעה שלך ננעלה — לא ניתן לשנות"
-              : count === PICKS_REQUIRED
+              : count === picksRequired
               ? "הבחירה שלך מוכנה"
               : count === 0
-              ? "בחר חמישה עשר אלבומים"
-              : "עוד " + (PICKS_REQUIRED - count) + (PICKS_REQUIRED - count === 1 ? " אלבום" : " אלבומים")}
+              ? "בחר " + poll.picksWord + " אלבומים"
+              : "עוד " + (picksRequired - count) + (picksRequired - count === 1 ? " אלבום" : " אלבומים")}
           </span>
         </div>
         <div className="bb-actions">
@@ -714,7 +769,7 @@ function Ballot({ me, albums, initial, saveVote }) {
 }
 
 /* ============================================================ RESULTS */
-function Results({ tally, phase, votedCount, votes }) {
+function Results({ poll, tally, phase, votedCount, votes }) {
   const { rows } = tally;
   if (phase !== "vote") {
     return (
@@ -736,8 +791,14 @@ function Results({ tally, phase, votedCount, votes }) {
       </section>
     );
   }
-  // everyone tied for a top-5 spot is shown, so the group can be 5, 6, 8...
-  // never a partial cut that shows some tied albums but not others
+  return poll.resultsMode === "podium"
+    ? <PodiumResults rows={rows} />
+    : <UniformResults rows={rows} />;
+}
+
+/* uniform: everyone tied for a top-5 spot is shown, so the group can be
+   5, 6, 8... never a partial cut that shows some tied albums but not others */
+function UniformResults({ rows }) {
   const top = rows.filter((r) => r.rank <= 5);
   const rest = rows.filter((r) => r.rank > 5);
   const title = top.length === 5 ? "חמשת החשובים" : "ה־" + top.length + " החשובים";
@@ -753,42 +814,92 @@ function Results({ tally, phase, votedCount, votes }) {
       </div>
 
       <ol className="top5">
-        {top.map((r) => (
-          <li key={r.id} className="crown">
-            <div className="rank">
-              <span className="rank-ghost">{r.rank}</span>
-              <span className="rank-fore">{r.rank}</span>
-            </div>
-            <Cover artist={r.album.artist} album={r.album.album} coverUrl={r.album.cover_url} size="big" />
-            <div className="crown-meta">
-              <div className="c-artist" dir="auto">{r.album.artist}</div>
-              <div className="c-album" dir="auto">{r.album.album}</div>
-              <div className="c-year">{r.album.year || ""}</div>
-              <Voters ids={r.voters} count={r.count} />
-            </div>
-          </li>
-        ))}
+        {top.map((r) => <CrownRow key={r.id} r={r} />)}
       </ol>
 
-      {rest.length > 0 && (
+      <RestList rows={rest} />
+    </section>
+  );
+}
+
+/* podium: one winner tier + two runner-up tiers, each expanding on ties —
+   same fairness principle as the uniform mode, applied per tier instead of
+   one flat cutoff */
+function PodiumResults({ rows }) {
+  const distinctRanks = [...new Set(rows.map((r) => r.rank))].sort((a, b) => a - b);
+  const winnerRank = distinctRanks[0];
+  const runnerRanks = distinctRanks.slice(1, 3);
+  const winners = rows.filter((r) => r.rank === winnerRank);
+  const runners = rows.filter((r) => runnerRanks.includes(r.rank));
+  const podiumRanks = new Set([winnerRank, ...runnerRanks]);
+  const rest = rows.filter((r) => !podiumRanks.has(r.rank));
+
+  return (
+    <section className="results">
+      <div className="res-head">
+        <div className="eyebrow">הכתרת המנצח</div>
+        <h2 className="res-title">האלבום הכי טוב בהיסטוריה</h2>
+        <div className="res-progress">כל החבורה הצביעה</div>
+        {winners.length > 1 && (
+          <div className="res-warn">תיקו במקום הראשון — {winners.length} אלבומים חולקים את הכתר.</div>
+        )}
+      </div>
+
+      <ol className="top5">
+        {winners.map((r) => <CrownRow key={r.id} r={r} />)}
+      </ol>
+
+      {runners.length > 0 && (
         <>
-          <div className="rest-h">שאר הרשימה</div>
-          <ol className="restlist">
-            {rest.map((r) => (
-              <li key={r.id} className="rrow">
-                <span className="rrank">{r.rank}</span>
-                <Cover artist={r.album.artist} album={r.album.album} coverUrl={r.album.cover_url} size="mini" />
-                <div className="rmeta">
-                  <span className="r-artist" dir="auto">{r.album.artist}</span>
-                  <span className="r-album" dir="auto">{r.album.album}</span>
-                </div>
-                <Voters ids={r.voters} count={r.count} compact />
-              </li>
-            ))}
+          <div className="rest-h">מקום שני ושלישי</div>
+          <ol className="top5 runners-up">
+            {runners.map((r) => <CrownRow key={r.id} r={r} small />)}
           </ol>
         </>
       )}
+
+      <RestList rows={rest} />
     </section>
+  );
+}
+
+function CrownRow({ r, small }) {
+  return (
+    <li className={"crown " + (small ? "crown-sm" : "")}>
+      <div className="rank">
+        <span className="rank-ghost">{r.rank}</span>
+        <span className="rank-fore">{r.rank}</span>
+      </div>
+      <Cover artist={r.album.artist} album={r.album.album} coverUrl={r.album.cover_url} size="big" />
+      <div className="crown-meta">
+        <div className="c-artist" dir="auto">{r.album.artist}</div>
+        <div className="c-album" dir="auto">{r.album.album}</div>
+        <div className="c-year">{r.album.year || ""}</div>
+        <Voters ids={r.voters} count={r.count} />
+      </div>
+    </li>
+  );
+}
+
+function RestList({ rows }) {
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <div className="rest-h">שאר הרשימה</div>
+      <ol className="restlist">
+        {rows.map((r) => (
+          <li key={r.id} className="rrow">
+            <span className="rrank">{r.rank}</span>
+            <Cover artist={r.album.artist} album={r.album.album} coverUrl={r.album.cover_url} size="mini" />
+            <div className="rmeta">
+              <span className="r-artist" dir="auto">{r.album.artist}</span>
+              <span className="r-album" dir="auto">{r.album.album}</span>
+            </div>
+            <Voters ids={r.voters} count={r.count} compact />
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 function Voters({ ids, count, compact }) {
@@ -871,11 +982,19 @@ const CSS = `
   font-family:'Heebo',system-ui,Arial,sans-serif; overflow-x:clip;
   -webkit-font-smoothing:antialiased;
 }
-.wrap.center{display:flex;align-items:center;justify-content:center}
 .loading{font-family:'Suez One',serif;font-size:22px;letter-spacing:.02em}
+.center-loading{padding:140px 20px;text-align:center}
 .grain{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.5;mix-blend-mode:multiply;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");}
 .main{position:relative;z-index:2;max-width:1120px;margin:0 auto;padding:22px 20px 120px}
+
+/* poll tabs */
+.poll-tabs{position:relative;z-index:3;max-width:1120px;margin:0 auto;padding:14px 20px 0;
+  display:flex;gap:10px;flex-wrap:wrap}
+.poll-tab{cursor:pointer;font-family:'Suez One',serif;font-size:15px;border:2px solid var(--ink);
+  background:var(--paper2);color:var(--ink2);border-radius:20px;padding:8px 18px}
+.poll-tab.on{background:var(--ink);color:var(--paper)}
+.poll-tab:not(.on):hover{color:var(--ink)}
 
 /* nav */
 .nav{position:relative;z-index:3;max-width:1120px;margin:0 auto;padding:16px 20px 10px;
@@ -1044,6 +1163,11 @@ button.acard{cursor:pointer;font-family:'Heebo';color:var(--ink);width:100%}
 .rank-fore{position:relative;color:var(--pink)}
 .crown .cover{width:120px;border:2px solid var(--ink)}
 .crown-meta{min-width:0}
+.crown-sm{grid-template-columns:auto 64px 1fr;gap:12px}
+.crown-sm .rank{width:clamp(40px,7vw,64px)}
+.crown-sm .rank-ghost,.crown-sm .rank-fore{font-size:clamp(34px,7vw,56px)}
+.crown-sm .cover{width:64px}
+.crown-sm .c-album{font-size:clamp(17px,3vw,22px)}
 .c-artist{font-weight:700;font-size:15px;color:var(--ink2)}
 .c-album{font-family:'Suez One',serif;font-size:clamp(22px,4vw,34px);line-height:1.02}
 .c-year{font-size:13px;color:var(--ink2);margin-top:2px}
