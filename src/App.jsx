@@ -8,7 +8,7 @@ import {
   setPhase as dbSetPhase,
   resetAll as dbResetAll,
 } from "./lib/store";
-import { searchAlbums, coverArtUrl } from "./lib/musicbrainz";
+import { searchAlbums } from "./lib/albumSearch";
 
 /* ============================================================
    החבורה — דירוג האלבומים החשובים בתולדות החבורה
@@ -545,7 +545,7 @@ function AddAlbumPanel({ addAlbum, existingKeys }) {
   }, [q, mode]);
 
   const pick = async (r) => {
-    const ok = await addAlbum(r.artist, r.album, r.year, coverArtUrl(r.id));
+    const ok = await addAlbum(r.artist, r.album, r.year, r.coverUrl);
     if (ok) { setQ(""); setResults([]); }
   };
 
@@ -595,7 +595,7 @@ function AddAlbumPanel({ addAlbum, existingKeys }) {
               const already = existingKeys.has(albumKey(r.artist, r.album));
               return (
                 <button key={r.id} className="mb-result" disabled={already} onClick={() => pick(r)}>
-                  <Cover artist={r.artist} album={r.album} coverUrl={coverArtUrl(r.id)} size="mini" />
+                  <Cover artist={r.artist} album={r.album} coverUrl={r.coverUrl} size="mini" />
                   <div className="mb-result-meta">
                     <span className="mb-result-artist" dir="auto">{r.artist}</span>
                     <span className="mb-result-album" dir="auto">{r.album}{r.year ? " · " + r.year : ""}</span>
@@ -607,7 +607,7 @@ function AddAlbumPanel({ addAlbum, existingKeys }) {
           </div>
         )}
       </div>
-      <div className="add-note">חיפוש מול מאגר MusicBrainz. אלבומים מהרשימה המקורית קבועים; אלבומים שנוספו אפשר למחוק, כל עוד ההצבעה לא נפתחה.</div>
+      <div className="add-note">אלבומים מהרשימה המקורית קבועים; אלבומים שנוספו אפשר למחוק, כל עוד ההצבעה לא נפתחה.</div>
       <button className="mb-switch" onClick={() => setMode("manual")}>לא מוצאים? הוספה ידנית →</button>
     </div>
   );
